@@ -8,6 +8,8 @@ import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapper;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapperConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,39 +18,32 @@ import org.springframework.util.StringUtils;
 @Configuration
 public class DynamoDBConfig {
 
+    private static final Logger logger = LoggerFactory.getLogger(DynamoDBConfig.class);
+
     @Value("${amazon.dynamodb.endpoint:}")
     private String dynamoDBEndpoint;
 
     @Value("${amazon.aws.region:us-east-1}")
     private String awsRegion;
 
-    @Value("${amazon.aws.profile:default}")
-    private String awsProfile;
-
     @Bean
     public AmazonDynamoDB amazonDynamoDB() {
-        // Create credentials provider (try profile first, then fall back to default chain)
-        AWSCredentialsProvider credentialsProvider;
+        logger.info("Initializing DynamoDB client with region: {}, endpoint: {}",
+                awsRegion,
+                StringUtils.hasText(dynamoDBEndpoint) ? dynamoDBEndpoint : "default");
 
-        try {
-            // Try to use the specified profile
-            credentialsProvider = new ProfileCredentialsProvider(awsProfile);
-            // Test if credentials are available from the profile
-            credentialsProvider.getCredentials();
-        } catch (Exception e) {
-            // If profile credentials fail, fall back to default chain
-            credentialsProvider = new DefaultAWSCredentialsProviderChain();
-        }
+
+        AWSCredentialsProvider credentialsProvider = new DefaultAWSCredentialsProviderChain();
 
         AmazonDynamoDBClientBuilder builder = AmazonDynamoDBClientBuilder.standard()
                 .withCredentials(credentialsProvider);
 
         if (StringUtils.hasText(dynamoDBEndpoint)) {
-            // When endpoint is specified (local DynamoDB or other endpoint)
+            logger.info("Using custom DynamoDB endpoint: {}", dynamoDBEndpoint);
             builder.withEndpointConfiguration(
                     new AwsClientBuilder.EndpointConfiguration(dynamoDBEndpoint, awsRegion));
         } else {
-            // Use the standard region configuration
+            logger.info("Using default AWS region: {}", awsRegion);
             builder.withRegion(awsRegion);
         }
 
