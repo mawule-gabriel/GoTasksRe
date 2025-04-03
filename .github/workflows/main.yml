@@ -52,80 +52,79 @@ jobs:
         echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
   deploy:
-  name: Deploy with Blue-Green strategy
-  needs: build-and-push
-  runs-on: ubuntu-latest
-  if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-  
-  steps:
-  - name: Configure AWS credentials
-    uses: aws-actions/configure-aws-credentials@v4
-    with:
-      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      aws-region: ${{ env.AWS_REGION }}
+    name: Deploy with Blue-Green strategy
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
-  - name: Register new task definition
-    id: task-def
-    run: |
-      # Get current task definition
-      aws ecs describe-task-definition --task-definition ${{ env.TASK_DEFINITION_FAMILY }} --query taskDefinition > task-definition.json
-      
-      # Update container image in task definition to use the new image (from build step)
-      jq ".containerDefinitions[0].image = \"${{ steps.build-image.outputs.image }}\"" task-definition.json > new-task-definition.json
+    - name: Register new task definition
+      id: task-def
+      run: |
+        # Get current task definition
+        aws ecs describe-task-definition --task-definition ${{ env.TASK_DEFINITION_FAMILY }} --query taskDefinition > task-definition.json
+        
+        # Update container image in task definition to use the new image (from build step)
+        jq ".containerDefinitions[0].image = \"${{ steps.build-image.outputs.image }}\"" task-definition.json > new-task-definition.json
 
-      # Register new task definition version
-      NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
-        --family ${{ env.TASK_DEFINITION_FAMILY }} \
-        --requires-compatibilities FARGATE \
-        --network-mode awsvpc \
-        --cpu $(jq -r '.cpu' task-definition.json) \
-        --memory $(jq -r '.memory' task-definition.json) \
-        --execution-role-arn $(jq -r '.executionRoleArn' task-definition.json) \
-        --task-role-arn $(jq -r '.taskRoleArn' task-definition.json) \
-        --container-definitions "$(jq '.containerDefinitions' new-task-definition.json)" \
-        --query 'taskDefinition.taskDefinitionArn' \
-        --output text)
-      
-      echo "task_definition_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
+        # Register new task definition version
+        NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --family ${{ env.TASK_DEFINITION_FAMILY }} \
+          --requires-compatibilities FARGATE \
+          --network-mode awsvpc \
+          --cpu $(jq -r '.cpu' task-definition.json) \
+          --memory $(jq -r '.memory' task-definition.json) \
+          --execution-role-arn $(jq -r '.executionRoleArn' task-definition.json) \
+          --task-role-arn $(jq -r '.taskRoleArn' task-definition.json) \
+          --container-definitions "$(jq '.containerDefinitions' new-task-definition.json)" \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+        
+        echo "task_definition_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
 
-  - name: Create AppSpec file
-    run: |
-      cat > appspec.yaml << 'EOF'
-      version: 0.0
-      Resources:
-        - TargetService:
-            Type: AWS::ECS::Service
-            Properties:
-              TaskDefinition: "${TASK_DEF_ARN}"
-              LoadBalancerInfo:
-                ContainerName: "${CONTAINER_NAME}"
-                ContainerPort: 8089
-              PlatformVersion: "LATEST"
-      EOF
+    - name: Create AppSpec file
+      run: |
+        cat > appspec.yaml << 'EOF'
+        version: 0.0
+        Resources:
+          - TargetService:
+              Type: AWS::ECS::Service
+              Properties:
+                TaskDefinition: "${TASK_DEF_ARN}"
+                LoadBalancerInfo:
+                  ContainerName: "${CONTAINER_NAME}"
+                  ContainerPort: 8089
+                PlatformVersion: "LATEST"
+        EOF
 
-      # Replace placeholders with actual values
-      sed -i "s|\${TASK_DEF_ARN}|${{ steps.task-def.outputs.task_definition_arn }}|g" appspec.yaml
-      sed -i "s|\${CONTAINER_NAME}|${{ env.CONTAINER_NAME }}|g" appspec.yaml
+        # Replace placeholders with actual values
+        sed -i "s|\${TASK_DEF_ARN}|${{ steps.task-def.outputs.task_definition_arn }}|g" appspec.yaml
+        sed -i "s|\${CONTAINER_NAME}|${{ env.CONTAINER_NAME }}|g" appspec.yaml
 
-      # Print AppSpec for debugging
-      cat appspec.yaml
+        # Print AppSpec for debugging
+        cat appspec.yaml
 
-  - name: Start CodeDeploy Deployment
-    run: |
-      DEPLOYMENT_ID=$(aws deploy create-deployment \
-        --application-name ${{ env.CODE_DEPLOY_APPLICATION }} \
-        --deployment-group-name ${{ env.CODE_DEPLOY_DEPLOYMENT_GROUP }} \
-        --revision revisionType=AppSpecContent,appSpecContent="{content='$(cat appspec.yaml)'}" \
-        --description "Automated deployment via GitHub Actions" \
-        --query 'deploymentId' \
-        --output text)
-      
-      echo "Started deployment: $DEPLOYMENT_ID"
-      
-      # Monitor deployment status (optional)
-      aws deploy get-deployment --deployment-id $DEPLOYMENT_ID
-      
-      echo "Deployment ID: $DEPLOYMENT_ID"
-      echo "Monitor the deployment progress in AWS CodeDeploy console"
-
+    - name: Start CodeDeploy Deployment
+      run: |
+        DEPLOYMENT_ID=$(aws deploy create-deployment \
+          --application-name ${{ env.CODE_DEPLOY_APPLICATION }} \
+          --deployment-group-name ${{ env.CODE_DEPLOY_DEPLOYMENT_GROUP }} \
+          --revision revisionType=AppSpecContent,appSpecContent="{content='$(cat appspec.yaml)'}" \
+          --description "Automated deployment via GitHub Actions" \
+          --query 'deploymentId' \
+          --output text)
+        
+        echo "Started deployment: $DEPLOYMENT_ID"
+        
+        # Monitor deployment status (optional)
+        aws deploy get-deployment --deployment-id $DEPLOYMENT_ID
+        
+        echo "Deployment ID: $DEPLOYMENT_ID"
+        echo "Monitor the deployment progress in AWS CodeDeploy console"
