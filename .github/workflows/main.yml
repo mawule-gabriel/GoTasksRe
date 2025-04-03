@@ -8,20 +8,19 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: gotasks
+  ECR_REPOSITORY: gotasksrepo
+  ECR_REGISTRY: public.ecr.aws/p9e3n8v1
   ECS_CLUSTER: GoTasks-Cluster
-  ECS_SERVICE: GoTasks-service
-  CONTAINER_NAME: GoTasks-container
-  TASK_DEFINITION_FAMILY: GoTasks-task
-  CODE_DEPLOY_APPLICATION: GoTasks-app
-  CODE_DEPLOY_DEPLOYMENT_GROUP: GoTasks-deployment-group
+  ECS_SERVICE: gotasks-service
+  CONTAINER_NAME: gotasks-container
+  TASK_DEFINITION_FAMILY: gotasks-task
+  CODE_DEPLOY_APPLICATION: gotasks-app
+  CODE_DEPLOY_DEPLOYMENT_GROUP: gotasks-deployment-group
 
 jobs:
   build-and-push:
     name: Build and Push to ECR
     runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.build-image.outputs.image }}
     
     steps:
     - name: Checkout code
@@ -34,24 +33,22 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
         
-    - name: Login to Amazon ECR
+    - name: Login to Amazon ECR Public
       id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
-      with:
-        registry-type: private
+      run: |
+        aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
       
     - name: Build, tag, and push image to Amazon ECR
       id: build-image
       env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
         # Build a docker container and push it to ECR
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG .
+        docker tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+        docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+        docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+        echo "image=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
   deploy:
     name: Deploy with Blue-Green strategy
@@ -73,8 +70,9 @@ jobs:
         # Get current task definition
         aws ecs describe-task-definition --task-definition ${{ env.TASK_DEFINITION_FAMILY }} --query taskDefinition > task-definition.json
         
-        # Update container image in task definition to use the new image (from build step)
-        jq ".containerDefinitions[0].image = \"${{ needs.build-and-push.outputs.image }}\"" task-definition.json > new-task-definition.json
+        # Update container image in task definition to use latest tag
+        jq '.containerDefinitions[0].image = "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"' task-definition.json > new-task-definition.json
+        
         # Register new task definition version
         NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
           --family ${{ env.TASK_DEFINITION_FAMILY }} \
@@ -89,7 +87,7 @@ jobs:
           --output text)
         
         echo "task_definition_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
-
+    
     - name: Create AppSpec file
       run: |
         cat > appspec.yaml << 'EOF'
@@ -101,15 +99,17 @@ jobs:
                 TaskDefinition: "${TASK_DEF_ARN}"
                 LoadBalancerInfo:
                   ContainerName: "${CONTAINER_NAME}"
-                  ContainerPort: 8089
+                  ContainerPort: 8080
                 PlatformVersion: "LATEST"
         EOF
+        
         # Replace placeholders with actual values
         sed -i "s|\${TASK_DEF_ARN}|${{ steps.task-def.outputs.task_definition_arn }}|g" appspec.yaml
         sed -i "s|\${CONTAINER_NAME}|${{ env.CONTAINER_NAME }}|g" appspec.yaml
+        
         # Print AppSpec for debugging
         cat appspec.yaml
-
+        
     - name: Start CodeDeploy Deployment
       run: |
         DEPLOYMENT_ID=$(aws deploy create-deployment \
