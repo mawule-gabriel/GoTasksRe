@@ -1,4 +1,4 @@
-name: GoTasks App CI/CD Pipeline
+name: Todo App CI/CD Pipeline
 
 on:
   push:
@@ -8,14 +8,13 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: gotasksrepo
-  ECR_REGISTRY: public.ecr.aws/p9e3n8v1
-  ECS_CLUSTER: GoTasks-Cluster
-  ECS_SERVICE: gotasks-service
-  CONTAINER_NAME: gotasks-container
-  TASK_DEFINITION_FAMILY: gotasks-task
-  CODE_DEPLOY_APPLICATION: gotasks-app
-  CODE_DEPLOY_DEPLOYMENT_GROUP: gotasks-deployment-group
+  ECR_REPOSITORY: taskss
+  ECS_CLUSTER: GoCluster
+  ECS_SERVICE: goservice
+  CONTAINER_NAME: GoTasks-container
+  TASK_DEFINITION_FAMILY: Gottask
+  CODE_DEPLOY_APPLICATION: todo-app-app
+  CODE_DEPLOY_DEPLOYMENT_GROUP: todo-app-deployment-group
 
 jobs:
   build-and-push:
@@ -33,22 +32,24 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
         
-    - name: Login to Amazon ECR Public
+    - name: Login to Amazon ECR
       id: login-ecr
-      run: |
-        aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+      uses: aws-actions/amazon-ecr-login@v2
+      with:
+        registry-type: private
       
     - name: Build, tag, and push image to Amazon ECR
       id: build-image
       env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
         # Build a docker container and push it to ECR
-        docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG .
-        docker tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
-        docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-        docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
-        echo "image=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
   deploy:
     name: Deploy with Blue-Green strategy
@@ -71,7 +72,7 @@ jobs:
         aws ecs describe-task-definition --task-definition ${{ env.TASK_DEFINITION_FAMILY }} --query taskDefinition > task-definition.json
         
         # Update container image in task definition to use latest tag
-        jq '.containerDefinitions[0].image = "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"' task-definition.json > new-task-definition.json
+        jq '.containerDefinitions[0].image = "888577065142.dkr.ecr.eu-central-1.amazonaws.com/todo-app:latest"' task-definition.json > new-task-definition.json
         
         # Register new task definition version
         NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
@@ -99,7 +100,7 @@ jobs:
                 TaskDefinition: "${TASK_DEF_ARN}"
                 LoadBalancerInfo:
                   ContainerName: "${CONTAINER_NAME}"
-                  ContainerPort: 8080
+                  ContainerPort: 8089
                 PlatformVersion: "LATEST"
         EOF
         
