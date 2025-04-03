@@ -1,98 +1,8 @@
-//package org.example.Config;
-//
-//import com.amazonaws.auth.AWSStaticCredentialsProvider;
-//import com.amazonaws.auth.BasicAWSCredentials;
-//import com.amazonaws.client.builder.AwsClientBuilder;
-//import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
-//import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
-//import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapper;
-//import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapperConfig;
-//import com.amazonaws.services.dynamodbv2.model.CreateTableRequest;
-//import com.amazonaws.services.dynamodbv2.model.ProvisionedThroughput;
-//import com.amazonaws.services.dynamodbv2.model.ResourceInUseException;
-//import com.amazonaws.services.dynamodbv2.model.DescribeTableRequest;
-//import com.amazonaws.services.dynamodbv2.model.DescribeTableResult;
-//import com.amazonaws.services.dynamodbv2.model.TableStatus;
-//import org.example.Entity.Task;
-//import org.springframework.beans.factory.annotation.Value;
-//import org.springframework.context.annotation.Bean;
-//import org.springframework.context.annotation.Configuration;
-//
-//@Configuration
-//public class DynamoDBConfig {
-//
-//    @Value("${amazon.dynamodb.endpoint}")
-//    private String dynamoDBEndpoint;
-//
-//    @Value("${amazon.aws.accesskey}")
-//    private String awsAccessKey;
-//
-//    @Value("${amazon.aws.secretkey}")
-//    private String awsSecretKey;
-//
-//    @Value("${amazon.aws.region}")
-//    private String awsRegion;
-//
-//    @Bean
-//    public AmazonDynamoDB amazonDynamoDB() {
-//        AmazonDynamoDB amazonDynamoDB = AmazonDynamoDBClientBuilder
-//                .standard()
-//                .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(dynamoDBEndpoint, awsRegion))
-//                .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(awsAccessKey, awsSecretKey)))
-//                .build();
-//
-//        // Create the Tasks table if it doesn't exist
-//        createTableIfNotExists(amazonDynamoDB);
-//
-//        return amazonDynamoDB;
-//    }
-//
-//    @Bean
-//    public DynamoDBMapper dynamoDBMapper(AmazonDynamoDB amazonDynamoDB) {
-//        return new DynamoDBMapper(amazonDynamoDB, DynamoDBMapperConfig.DEFAULT);
-//    }
-//
-//    private void createTableIfNotExists(AmazonDynamoDB amazonDynamoDB) {
-//        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
-//        CreateTableRequest tableRequest = mapper.generateCreateTableRequest(Task.class)
-//                .withProvisionedThroughput(new ProvisionedThroughput(5L, 5L));
-//
-//        try {
-//            amazonDynamoDB.createTable(tableRequest);
-//            // Wait for the table to become active
-//            waitForTableToBeActive(amazonDynamoDB, "Tasks", 60);
-//        } catch (ResourceInUseException e) {
-//            // Table already exists, no action needed
-//        } catch (InterruptedException e) {
-//            Thread.currentThread().interrupt();
-//            throw new RuntimeException("Interrupted while waiting for table creation", e);
-//        }
-//    }
-//
-//    private void waitForTableToBeActive(AmazonDynamoDB amazonDynamoDB, String tableName, int timeoutSeconds) throws InterruptedException {
-//        long startTime = System.currentTimeMillis();
-//        long endTime = startTime + (timeoutSeconds * 1000L);
-//
-//        while (System.currentTimeMillis() < endTime) {
-//            DescribeTableRequest request = new DescribeTableRequest().withTableName(tableName);
-//            DescribeTableResult result = amazonDynamoDB.describeTable(request);
-//            String status = result.getTable().getTableStatus();
-//
-//            if (TableStatus.ACTIVE.toString().equals(status)) {
-//                return;
-//            }
-//
-//            Thread.sleep(1000);
-//        }
-//
-//        throw new RuntimeException("Timeout waiting for table " + tableName + " to become active");
-//    }
-//}
-
 package org.example.Config;
 
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
+import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
@@ -101,29 +11,48 @@ import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapperConfig;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 
 @Configuration
 public class DynamoDBConfig {
 
-    @Value("${amazon.dynamodb.endpoint}")
+    @Value("${amazon.dynamodb.endpoint:}")
     private String dynamoDBEndpoint;
 
-    @Value("${amazon.aws.accesskey}")
-    private String awsAccessKey;
-
-    @Value("${amazon.aws.secretkey}")
-    private String awsSecretKey;
-
-    @Value("${amazon.aws.region}")
+    @Value("${amazon.aws.region:us-east-1}")
     private String awsRegion;
+
+    @Value("${amazon.aws.profile:default}")
+    private String awsProfile;
 
     @Bean
     public AmazonDynamoDB amazonDynamoDB() {
-        return AmazonDynamoDBClientBuilder
-                .standard()
-                .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(dynamoDBEndpoint, awsRegion))
-                .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(awsAccessKey, awsSecretKey)))
-                .build();
+        // Create credentials provider (try profile first, then fall back to default chain)
+        AWSCredentialsProvider credentialsProvider;
+
+        try {
+            // Try to use the specified profile
+            credentialsProvider = new ProfileCredentialsProvider(awsProfile);
+            // Test if credentials are available from the profile
+            credentialsProvider.getCredentials();
+        } catch (Exception e) {
+            // If profile credentials fail, fall back to default chain
+            credentialsProvider = new DefaultAWSCredentialsProviderChain();
+        }
+
+        AmazonDynamoDBClientBuilder builder = AmazonDynamoDBClientBuilder.standard()
+                .withCredentials(credentialsProvider);
+
+        if (StringUtils.hasText(dynamoDBEndpoint)) {
+            // When endpoint is specified (local DynamoDB or other endpoint)
+            builder.withEndpointConfiguration(
+                    new AwsClientBuilder.EndpointConfiguration(dynamoDBEndpoint, awsRegion));
+        } else {
+            // Use the standard region configuration
+            builder.withRegion(awsRegion);
+        }
+
+        return builder.build();
     }
 
     @Bean
