@@ -20,6 +20,8 @@ jobs:
   build-and-push:
     name: Build and Push to ECR
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
     
     steps:
     - name: Checkout code
@@ -72,8 +74,7 @@ jobs:
         aws ecs describe-task-definition --task-definition ${{ env.TASK_DEFINITION_FAMILY }} --query taskDefinition > task-definition.json
         
         # Update container image in task definition to use the new image (from build step)
-        jq ".containerDefinitions[0].image = \"${{ steps.build-image.outputs.image }}\"" task-definition.json > new-task-definition.json
-
+        jq ".containerDefinitions[0].image = \"${{ needs.build-and-push.outputs.image }}\"" task-definition.json > new-task-definition.json
         # Register new task definition version
         NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
           --family ${{ env.TASK_DEFINITION_FAMILY }} \
@@ -103,11 +104,9 @@ jobs:
                   ContainerPort: 8089
                 PlatformVersion: "LATEST"
         EOF
-
         # Replace placeholders with actual values
         sed -i "s|\${TASK_DEF_ARN}|${{ steps.task-def.outputs.task_definition_arn }}|g" appspec.yaml
         sed -i "s|\${CONTAINER_NAME}|${{ env.CONTAINER_NAME }}|g" appspec.yaml
-
         # Print AppSpec for debugging
         cat appspec.yaml
 
