@@ -12,7 +12,7 @@ env:
   ECS_CLUSTER: GoCluster
   ECS_SERVICE: goservice
   CONTAINER_NAME: GoTasks-container
-  TASK_DEFINITION_FAMILY: Gottask
+  TASK_DEFINITION_FAMILY: gotasks-task
   CODE_DEPLOY_APPLICATION: todo-app-app
   CODE_DEPLOY_DEPLOYMENT_GROUP: todo-app-deployment-group
 
