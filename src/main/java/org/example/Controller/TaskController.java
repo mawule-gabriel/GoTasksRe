@@ -24,16 +24,32 @@ public class TaskController {
     @GetMapping
     public String getTaskList(Model model) {
         List<Task> tasks = taskService.getAllTasks();
+        System.out.println("Tasks fetched for rendering: " + tasks);
+        int activeTasks = 0;
+        int completedTasks = 0;
+        if (tasks != null) {
+            for (Task task : tasks) {
+                if (task.isCompleted()) {
+                    completedTasks++;
+                } else {
+                    activeTasks++;
+                }
+            }
+        }
         model.addAttribute("tasks", tasks);
-        model.addAttribute("newTask", new Task()); // For the form
-        return "index"; // Renders src/main/resources/templates/index.html
+        model.addAttribute("activeTasks", activeTasks);
+        model.addAttribute("completedTasks", completedTasks);
+        model.addAttribute("newTask", new Task());
+        return "index";
     }
 
-    // Create a new task (POST request)
     @PostMapping("/add")
     public String addTask(@RequestParam String content) {
-        taskService.createTask(content);
-        return "redirect:/"; // Redirect to refresh the task list
+        if (content != null && !content.trim().isEmpty()) {
+            System.out.println("Adding task with content: " + content);
+            taskService.createTask(content);
+        }
+        return "redirect:/";
     }
 
     // Update task content (POST request)
@@ -43,9 +59,9 @@ public class TaskController {
         return "redirect:/";
     }
 
-    // Toggle task completion (POST request)
     @PostMapping("/toggle/{id}")
     public String toggleTask(@PathVariable String id) {
+        System.out.println("Toggling task with ID: " + id);
         taskService.toggleTaskCompletion(id);
         return "redirect:/";
     }

@@ -16,12 +16,22 @@
     </parent>
 
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <spring-data-dynamodb.version>5.2.2</spring-data-dynamodb.version>
-        <aws-java-sdk.version>1.12.261</aws-java-sdk.version>
+        <java.version>21</java.version>
+        <aws.sdk.version>2.30.37</aws.sdk.version>
+        <aws-java-sdk.version>1.12.689</aws-java-sdk.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws.sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Spring Boot Web Starter -->
@@ -36,18 +46,35 @@
             <artifactId>spring-boot-starter-thymeleaf</artifactId>
         </dependency>
 
-        <!-- AWS SDK for DynamoDB -->
+        <!-- AWS SDK V2 for DynamoDB -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+        </dependency>
+
+        <!-- AWS SDK V2 Enhanced Client for DynamoDB -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb-enhanced</artifactId>
+        </dependency>
+
+        <!-- Apache HTTP Client for AWS SDK V2 -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache-client</artifactId>
+        </dependency>
+
+        <!-- Keep AWS SDK V1 for DynamoDB for backward compatibility -->
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk-dynamodb</artifactId>
             <version>${aws-java-sdk.version}</version>
         </dependency>
 
-        <!-- Spring Data DynamoDB -->
         <dependency>
-            <groupId>io.github.boostchicken</groupId>
-            <artifactId>spring-data-dynamodb</artifactId>
-            <version>${spring-data-dynamodb.version}</version>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>2.30.37</version>
         </dependency>
 
         <!-- Lombok to reduce boilerplate code -->
@@ -56,6 +83,7 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

@@ -20,16 +20,15 @@ public class TaskService {
         this.taskRepository = taskRepository;
     }
 
-    // Create a new task
     public Task createTask(String content) {
         Task task = new Task();
         task.setId(UUID.randomUUID().toString());
         task.setContent(content);
         task.setCompleted(false);
+        System.out.println("Creating new task - ID: " + task.getId() + ", Content: " + content);
         return taskRepository.save(task);
     }
 
-    // Get all tasks
     public List<Task> getAllTasks() {
         Iterable<Task> tasks = taskRepository.findAll();
         List<Task> taskList = new ArrayList<>();
@@ -37,34 +36,39 @@ public class TaskService {
         return taskList;
     }
 
-    // Get a task by ID
     public Optional<Task> getTaskById(String id) {
         return taskRepository.findById(id);
     }
 
-    // Update task content
     public Optional<Task> updateTaskContent(String id, String newContent) {
         Optional<Task> optionalTask = taskRepository.findById(id);
         if (optionalTask.isPresent()) {
             Task task = optionalTask.get();
+            System.out.println("Updating task content - ID: " + id + ", New Content: " + newContent);
             task.setContent(newContent);
             return Optional.of(taskRepository.save(task));
         }
         return Optional.empty();
     }
 
-    // Toggle task completion status
     public Optional<Task> toggleTaskCompletion(String id) {
         Optional<Task> optionalTask = taskRepository.findById(id);
         if (optionalTask.isPresent()) {
             Task task = optionalTask.get();
-            task.setCompleted(!task.isCompleted());
-            return Optional.of(taskRepository.save(task));
+            boolean currentStatus = task.isCompleted();
+            System.out.println("Before toggle - Task ID: " + id + ", Completed: " + currentStatus);
+            task.setCompleted(!currentStatus);
+            Task savedTask = taskRepository.save(task);
+            System.out.println("After toggle - Task ID: " + id + ", Completed: " + savedTask.isCompleted());
+            // Fetch directly to verify
+            Optional<Task> verifiedTask = taskRepository.findById(id);
+            System.out.println("Verified fetch after toggle: " + verifiedTask.orElse(null));
+            return Optional.of(savedTask);
         }
+        System.out.println("Task not found for ID: " + id);
         return Optional.empty();
     }
 
-    // Delete a task
     public boolean deleteTask(String id) {
         if (taskRepository.existsById(id)) {
             taskRepository.deleteById(id);
