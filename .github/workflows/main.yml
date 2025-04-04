@@ -1,28 +1,26 @@
-name: Todo App CI/CD Pipeline
+name: Tasks App CI/CD Pipeline
 
 on:
   push:
     branches: [ main ]  
   pull_request:
-    branches: [ main ]  
+    branches: [ main ]   
 
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: taskss
-  ECS_CLUSTER: GoCluster
-  ECS_SERVICE: goservice
-  CONTAINER_NAME: GoTasks-container
-  TASK_DEFINITION_FAMILY: gotasks-task
-  CODE_DEPLOY_APPLICATION: todo-app-app
-  CODE_DEPLOY_DEPLOYMENT_GROUP: todo-app-deployment-group
+  ECS_CLUSTER: tasks-app-Cluster
+  ECS_SERVICE: tasks-app-service
+  CONTAINER_NAME: tasks-app-container
+  TASK_DEFINITION_FAMILY: tasks-app-task
+  CODE_DEPLOY_APPLICATION: tasks-app-app
+  CODE_DEPLOY_DEPLOYMENT_GROUP: tasks-app-deployment-group
 
 jobs:
   build-and-push:
     name: Build and Push to ECR
     runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.build-image.outputs.image }}
-
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -44,8 +42,9 @@ jobs:
       id: build-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: latest
+        IMAGE_TAG: ${{ github.sha }}
       run: |
+        # Build a docker container and push it to ECR
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
@@ -69,12 +68,13 @@ jobs:
     - name: Register new task definition
       id: task-def
       run: |
+        # Get current task definition
         aws ecs describe-task-definition --task-definition ${{ env.TASK_DEFINITION_FAMILY }} --query taskDefinition > task-definition.json
-
-        jq --arg IMAGE "${{ needs.build-and-push.outputs.image }}" \
-           '.containerDefinitions[0].image = $IMAGE' \
-           task-definition.json > new-task-definition.json
-
+        
+        # Update container image in task definition to use latest tag
+        jq '.containerDefinitions[0].image = "306011030978.dkr.ecr.us-east-1.amazonaws.com/taskss:latest"' task-definition.json > new-task-definition.json
+        
+        # Register new task definition version
         NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
           --family ${{ env.TASK_DEFINITION_FAMILY }} \
           --requires-compatibilities FARGATE \
@@ -86,9 +86,9 @@ jobs:
           --container-definitions "$(jq '.containerDefinitions' new-task-definition.json)" \
           --query 'taskDefinition.taskDefinitionArn' \
           --output text)
-
+        
         echo "task_definition_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
-
+    
     - name: Create AppSpec file
       run: |
         cat > appspec.yaml << 'EOF'
@@ -100,15 +100,17 @@ jobs:
                 TaskDefinition: "${TASK_DEF_ARN}"
                 LoadBalancerInfo:
                   ContainerName: "${CONTAINER_NAME}"
-                  ContainerPort: 8080
+                  ContainerPort: 8089
                 PlatformVersion: "LATEST"
         EOF
         
+        # Replace placeholders with actual values
         sed -i "s|\${TASK_DEF_ARN}|${{ steps.task-def.outputs.task_definition_arn }}|g" appspec.yaml
         sed -i "s|\${CONTAINER_NAME}|${{ env.CONTAINER_NAME }}|g" appspec.yaml
         
+        # Print AppSpec for debugging
         cat appspec.yaml
-
+        
     - name: Start CodeDeploy Deployment
       run: |
         DEPLOYMENT_ID=$(aws deploy create-deployment \
@@ -118,7 +120,11 @@ jobs:
           --description "Automated deployment via GitHub Actions" \
           --query 'deploymentId' \
           --output text)
-
+        
         echo "Started deployment: $DEPLOYMENT_ID"
+        
+        # Monitor deployment status (optional)
         aws deploy get-deployment --deployment-id $DEPLOYMENT_ID
+        
         echo "Deployment ID: $DEPLOYMENT_ID"
+        echo "Monitor the deployment progress in AWS CodeDeploy console"
