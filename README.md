@@ -5,6 +5,8 @@ A containerized Todo web application built with Java SpringBoot and Thymeleaf th
 
 ## Architecture
 
+![Network Diagram](./Gotasks.png)
+
 ### Components
 - **Frontend**: Thymeleaf templates  
 - **Backend**: Java SpringBoot REST API  
